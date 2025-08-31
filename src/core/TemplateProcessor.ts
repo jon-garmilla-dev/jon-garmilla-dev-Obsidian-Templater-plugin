@@ -65,22 +65,23 @@ export class TemplateProcessor {
 
 	// Get next auto-increment number
 	getAutoIncrementNumber(baseName: string, targetFolder: TFolder): string {
-		// Remove {{+Number}} to get base name
-		const cleanBaseName = baseName.replace(/\{\{\+Number\}\}/g, '');
+		// Create a regex pattern from the base name by replacing {{+Number}} with a capturing group for digits.
+		// This is a safer way to build the regex than splitting the string.
+		const patternString = `^${escapeRegExp(baseName).replace(escapeRegExp('{{+Number}}'), '(\\d+)')}$`;
+		const numberedPattern = new RegExp(patternString);
+
+		const existingItems = targetFolder.children.map(child => child.name);
 		
-		const existingItems = targetFolder.children
-			.map(child => child.name);
-		
-		// Find existing numbered items
-		const numberedPattern = new RegExp(`^${escapeRegExp(cleanBaseName)}(\\d{2})(.*)$`);
+		// Extract numbers from filenames that match the pattern
 		const existingNumbers = existingItems
 			.map(name => {
 				const match = name.match(numberedPattern);
-				return match ? parseInt(match[1], 10) : 0;
+				// The number is in the first capturing group (match[1])
+				return match && match[1] ? parseInt(match[1], 10) : 0;
 			})
 			.filter(num => num > 0);
 		
-		// Get next number
+		// Determine the next number
 		const nextNumber = existingNumbers.length > 0 ? Math.max(...existingNumbers) + 1 : 1;
 		
 		return nextNumber.toString().padStart(2, '0');
