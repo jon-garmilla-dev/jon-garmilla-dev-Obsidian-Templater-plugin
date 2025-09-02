@@ -20,6 +20,16 @@ export class TemplateProcessor {
 		if (!this.settings.dateVariables) {
 			return text;
 		}
+
+		let result = text;
+
+		// Handle {{+Number}} auto-increment FIRST.
+		// This ensures the number is calculated based on the template's structure,
+		// not the content of other variables like {{dayName}}.
+		if (result.includes('{{+Number}}')) {
+			const incrementNumber = this.getAutoIncrementNumber(result, targetFolder);
+			result = result.replace(/\{\{\+Number\}\}/g, incrementNumber);
+		}
 		
 		const now = new Date();
 		const dateString = now.toISOString().split('T')[0]; // YYYY-MM-DD
@@ -33,8 +43,7 @@ export class TemplateProcessor {
 		
 		console.log('Processing variables for text:', text);
 		
-		
-		let result = text
+		result = result
 			.replace(/\{\{date\}\}/g, dateString)
 			.replace(/\{\{dayName\}\}/g, dayName)
 			.replace(/\{\{year\}\}/g, now.getFullYear().toString())
@@ -51,37 +60,47 @@ export class TemplateProcessor {
 			result = result.replace(new RegExp(`\\{\\{weekDay${i}\\}\\}`, 'g'), dayNames[weekDayIndex]);
 		}
 
-		console.log('After date/day variables:', result);
-
-		// Handle {{+Number}} auto-increment after other variables
-		if (result.includes('{{+Number}}')) {
-			const incrementNumber = this.getAutoIncrementNumber(result, targetFolder);
-			result = result.replace(/\{\{\+Number\}\}/g, incrementNumber);
-		}
-
 		console.log('Final result:', result);
 		return result;
 	}
 
 	// Get next auto-increment number
-	getAutoIncrementNumber(baseName: string, targetFolder: TFolder): string {
-		// Create a regex pattern from the base name by replacing {{+Number}} with a capturing group for digits.
-		// This is a safer way to build the regex than splitting the string.
-		const patternString = `^${escapeRegExp(baseName).replace(escapeRegExp('{{+Number}}'), '(\\d+)')}$`;
+	getAutoIncrementNumber(template: string, targetFolder: TFolder): string {
+		// Split the template by the {{+Number}} token to isolate the parts of the filename.
+		const parts = template.split(/\{\{\+Number\}\}/g);
+		
+		// Process each part to build a safe and correct regex segment.
+		const regexParts = parts.map(part => {
+			// First, escape the entire part to handle any special regex characters literally.
+			let escapedPart = escapeRegExp(part);
+			
+			// Find all {{...}} variables within the original, unescaped part.
+			const variableRegex = /\{\{.*?\}\}/g;
+			let match;
+			while ((match = variableRegex.exec(part)) !== null) {
+				// Escape the variable token itself (e.g., '{{dayName}}' becomes '\{\{dayName\}\}').
+				const escapedToken = escapeRegExp(match[0]);
+				// In the already-escaped string, replace the escaped token with a wildcard.
+				// This ensures that wildcards are not themselves escaped.
+				escapedPart = escapedPart.replace(escapedToken, '.*');
+			}
+			return escapedPart;
+		});
+
+		// Join the processed parts with the number-capturing group '(\d+)'.
+		const patternString = `^${regexParts.join('(\\d+)')}$`;
 		const numberedPattern = new RegExp(patternString);
 
 		const existingItems = targetFolder.children.map(child => child.name);
 		
-		// Extract numbers from filenames that match the pattern
 		const existingNumbers = existingItems
 			.map(name => {
 				const match = name.match(numberedPattern);
-				// The number is in the first capturing group (match[1])
+				// The number is in the first capturing group (match[1]).
 				return match && match[1] ? parseInt(match[1], 10) : 0;
 			})
 			.filter(num => num > 0);
 		
-		// Determine the next number
 		const nextNumber = existingNumbers.length > 0 ? Math.max(...existingNumbers) + 1 : 1;
 		
 		return nextNumber.toString().padStart(2, '0');
